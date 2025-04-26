@@ -1,5 +1,4 @@
 Streamlit
 Pandas
-SQLite3
 Plotly
 XlsxWriter
