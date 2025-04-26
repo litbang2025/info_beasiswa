@@ -11,7 +11,7 @@ def get_connection():
     return sqlite3.connect("database_beasiswa.db")
 
 # -------------------------
-# Fungsi insert data
+# Fungsi insert, fetch, delete, update
 # -------------------------
 def insert_data(data):
     conn = get_connection()
@@ -23,18 +23,12 @@ def insert_data(data):
     conn.commit()
     conn.close()
 
-# -------------------------
-# Fungsi ambil data
-# -------------------------
 def fetch_data():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM beasiswa", conn)
     conn.close()
     return df
 
-# -------------------------
-# Fungsi hapus data
-# -------------------------
 def delete_data_by_id(id_value):
     conn = get_connection()
     cursor = conn.cursor()
@@ -42,9 +36,6 @@ def delete_data_by_id(id_value):
     conn.commit()
     conn.close()
 
-# -------------------------
-# Fungsi update data
-# -------------------------
 def update_data_by_id(id_value, updated_row):
     conn = get_connection()
     cursor = conn.cursor()
@@ -61,62 +52,89 @@ def update_data_by_id(id_value, updated_row):
 # UI Streamlit
 # -------------------------
 st.set_page_config(
-    page_title="Data Beasiswa",
-    page_icon="📚",
-    layout="wide",  # Layout wide untuk tampilan desktop yang lebih lebar
-    initial_sidebar_state="collapsed"  # Sidebar dalam keadaan tersembunyi secara default
+    page_title="🎓 Data Beasiswa Global",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Sidebar navigasi
-st.sidebar.title("Navigasi")
-selection = st.sidebar.radio("Pilih Menu", ["Upload Data", "Data Tersimpan", "Edit Data", "Hapus Data", "Grafik", "Filter Data", "Laporan", "Reset Data"])
+# -------------------------
+# Sidebar Navigasi
+# -------------------------
+with st.sidebar:
+    st.title("🌍 Beasiswa Dashboard")
+    st.markdown("---")
+    menu = st.radio("Navigasi Menu", 
+        ["🏠 Dashboard", "⬆️ Upload Data", "📄 Data Tersimpan", 
+         "✏️ Edit Data", "🗑️ Hapus Data", "📊 Grafik", 
+         "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database"]
+    )
+    st.markdown("---")
+    st.caption("Dibuat oleh: Tim Beasiswa Global")
 
 # -------------------------
-# Menu Upload Data
+# Tampilan Dashboard
 # -------------------------
-if selection == "Upload Data":
-    st.title("📚 Upload Data Beasiswa")
-    uploaded_file = st.file_uploader("📤 Upload File CSV atau Excel (Tanpa Header)", type=["csv", "xlsx"])
+if menu == "🏠 Dashboard":
+    st.title("🎯 Dashboard Beasiswa Global")
+    df_db = fetch_data()
+
+    st.subheader("Statistik Ringkas")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Jumlah Beasiswa", len(df_db))
+    col2.metric("Negara Asal Unik", df_db['asal_beasiswa'].nunique())
+    col3.metric("Program Beasiswa Unik", df_db['program_beasiswa'].nunique())
+
+    st.markdown("---")
+    st.subheader("Visualisasi Singkat")
+    fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
+    st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------
+# Upload Data
+# -------------------------
+elif menu == "⬆️ Upload Data":
+    st.title("⬆️ Upload Data Beasiswa Baru")
+    uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
     if uploaded_file is not None:
         if uploaded_file.name.endswith("csv"):
             df = pd.read_csv(uploaded_file, header=None)
-        elif uploaded_file.name.endswith("xlsx"):
+        else:
             df = pd.read_excel(uploaded_file, header=None)
-        
-        st.subheader("👀 Preview Data:")
-        st.dataframe(df)
 
-        # Konversi ke list dan lewati baris pertama jika header
+        with st.expander("📖 Preview Data Upload"):
+            st.dataframe(df)
+
         data = df.values.tolist()
         if not str(data[0][0]).isdigit() and not str(data[0][0]).startswith("B"):
             data = data[1:]
 
         if st.button("✅ Simpan ke Database"):
             insert_data(data)
-            st.success("Data berhasil disimpan ke database!")
+            st.success("Data berhasil disimpan!")
 
 # -------------------------
-# Menu Data Tersimpan
+# Data Tersimpan
 # -------------------------
-elif selection == "Data Tersimpan":
-    st.title("📄 Data Tersimpan")
+elif menu == "📄 Data Tersimpan":
+    st.title("📄 Database Beasiswa")
     df_db = fetch_data()
-    st.dataframe(df_db)
 
-    # Filter dan pencarian
-    st.subheader("🔍 Cari Beasiswa")
-    keyword = st.text_input("Ketik kata kunci (misal: Jepang, S2, Eropa)")
-    if keyword:
-        filtered_df = df_db[df_db.apply(lambda row: row.astype(str).str.contains(keyword, case=False).any(), axis=1)]
-        st.dataframe(filtered_df)
+    with st.expander("🔍 Cari Data"):
+        keyword = st.text_input("Masukkan kata kunci pencarian")
+        if keyword:
+            df_db = df_db[df_db.apply(lambda row: row.astype(str).str.contains(keyword, case=False).any(), axis=1)]
+
+    st.dataframe(df_db, use_container_width=True)
 
 # -------------------------
-# Menu Edit Data
+# Edit Data
 # -------------------------
-elif selection == "Edit Data":
-    st.title("✏️ Edit Data Berdasarkan ID")
+elif menu == "✏️ Edit Data":
+    st.title("✏️ Edit Data Beasiswa")
     df_db = fetch_data()
-    id_edit = st.text_input("Masukkan ID yang akan diedit:")
+    id_edit = st.text_input("Masukkan ID Beasiswa yang akan diedit:")
+
     if id_edit:
         record = df_db[df_db['id'] == id_edit]
         if not record.empty:
@@ -128,79 +146,63 @@ elif selection == "Edit Data":
             program = st.text_input("Program", values[5])
             jenis = st.text_input("Jenis", values[6])
             link = st.text_input("Link", values[7])
-            if st.button("Update Data"):
+
+            if st.button("💾 Update"):
                 update_data_by_id(id_edit, [benua, asal, lembaga, topuniv, program, jenis, link])
-                st.success("Data berhasil diperbarui.")
+                st.success("Data berhasil diupdate.")
 
 # -------------------------
-# Menu Hapus Data
+# Hapus Data
 # -------------------------
-elif selection == "Hapus Data":
-    st.title("🗑️ Hapus Data Berdasarkan ID")
+elif menu == "🗑️ Hapus Data":
+    st.title("🗑️ Hapus Data Beasiswa")
+    id_delete = st.text_input("Masukkan ID Beasiswa yang akan dihapus:")
+    if st.button("⚡ Hapus Data"):
+        delete_data_by_id(id_delete)
+        st.warning(f"Data dengan ID {id_delete} telah dihapus.")
+
+# -------------------------
+# Grafik
+# -------------------------
+elif menu == "📊 Grafik":
+    st.title("📊 Visualisasi Data Beasiswa")
     df_db = fetch_data()
-    id_delete = st.text_input("Masukkan ID yang akan dihapus:")
-    if st.button("Hapus Data"):
-        if id_delete:
-            delete_data_by_id(id_delete)
-            st.warning(f"Data dengan ID {id_delete} telah dihapus.")
+
+    tab1, tab2 = st.tabs(["📊 Jenis Beasiswa", "🏛️ Top Universitas"])
+
+    with tab1:
+        fig = px.pie(df_db, names='jenis_beasiswa', title='Distribusi Jenis Beasiswa', hole=0.4)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        top_univ_count = df_db['top_univ'].value_counts().nlargest(10).reset_index()
+        top_univ_count.columns = ['Top Universitas', 'Jumlah Beasiswa']
+        fig = px.bar(top_univ_count, x='Jumlah Beasiswa', y='Top Universitas', orientation='h', color='Jumlah Beasiswa',
+                     title="Top 10 Universitas dengan Beasiswa Terbanyak", color_continuous_scale='Teal')
+        st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------
-# Menu Reset Data
+# Filter Data
 # -------------------------
-elif selection == "Reset Data":
-    st.title("🧹 Reset Seluruh Data Beasiswa")
-    if st.button("⚠️ Hapus Semua Data"):
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM beasiswa")
-        conn.commit()
-        conn.close()
-        st.warning("⚠️ Semua data beasiswa telah dihapus dari database!")
-
-# -------------------------
-# Menu Filter DataHapus Semua Data
-# -------------------------
-elif selection == "Filter Data":
-    st.title("🔍 Filter Data Beasiswa")
+elif menu == "🔎 Filter Data":
+    st.title("🔎 Filter Data Beasiswa")
     df_db = fetch_data()
-    
-    # Filter berdasarkan benua
-    benua_filter = st.selectbox("Pilih Benua", df_db['benua'].unique())
 
-    # Filter berdasarkan program
-    program_filter = st.selectbox("Pilih Program Beasiswa", df_db['program_beasiswa'].unique())
+    col1, col2 = st.columns(2)
+    benua_filter = col1.selectbox("Pilih Benua", df_db['benua'].unique())
+    program_filter = col2.selectbox("Pilih Program Beasiswa", df_db['program_beasiswa'].unique())
 
-    # Menampilkan data berdasarkan filter
     filtered_df = df_db[(df_db['benua'] == benua_filter) & (df_db['program_beasiswa'] == program_filter)]
-    st.dataframe(filtered_df)
+    st.dataframe(filtered_df, use_container_width=True)
 
 # -------------------------
-# Menu Grafik
+# Download Data
 # -------------------------
-elif selection == "Grafik":
-    st.title("📊 Grafik Beasiswa")
+elif menu == "📥 Download Data":
+    st.title("📥 Download Database")
     df_db = fetch_data()
+    file_format = st.selectbox("Pilih format file", ["CSV", "Excel"])
 
-    # Pie chart berdasarkan jenis beasiswa
-    st.subheader("📊 Distribusi Jenis Beasiswa")
-    fig = px.pie(df_db, names='jenis_beasiswa', title='Distribusi Jenis Beasiswa')
-    st.plotly_chart(fig)
-
-    # Top universitas berdasarkan jumlah beasiswa
-    st.subheader("🏅 Top Universitas dengan Beasiswa Terbanyak")
-    top_univ_count = df_db['top_univ'].value_counts().reset_index()
-    top_univ_count.columns = ['Universitas', 'Jumlah Beasiswa']
-    fig_top_univ = px.bar(top_univ_count, x='Universitas', y='Jumlah Beasiswa', title="Top Universitas dengan Beasiswa Terbanyak")
-    st.plotly_chart(fig_top_univ)
-
-# -------------------------
-# Menu Laporan PDF
-# -------------------------
-elif selection == "Laporan":
-    st.title("📥 Unduh Data Beasiswa")
-    df_db = fetch_data()
-    file_format = st.selectbox("Pilih format unduhan", ["CSV", "Excel"])
-    
     if file_format == "CSV":
         st.download_button("Download CSV", df_db.to_csv(index=False).encode('utf-8'), "data_beasiswa.csv")
     else:
@@ -208,4 +210,17 @@ elif selection == "Laporan":
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_db.to_excel(writer, index=False, sheet_name='Beasiswa')
         st.download_button("Download Excel", output.getvalue(), "data_beasiswa.xlsx")
+
+# -------------------------
+# Reset Database
+# -------------------------
+elif menu == "⚠️ Reset Database":
+    st.title("⚠️ Reset Seluruh Database Beasiswa")
+    if st.button("🚨 Hapus Semua Data"):
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM beasiswa")
+        conn.commit()
+        conn.close()
+        st.error("Semua data telah dihapus!")
 
