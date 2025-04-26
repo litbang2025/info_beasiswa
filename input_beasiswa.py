@@ -140,7 +140,7 @@ with st.sidebar:
          "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database"]
     )
     st.markdown("---")
-    st.caption("Dibuat oleh: Tim Beasiswa Global")
+    st.caption("Dibuat oleh: Tim Litbang IHBS")
 
 # -------------------------
 # Tampilan Dashboard
