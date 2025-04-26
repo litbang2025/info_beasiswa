@@ -59,6 +59,76 @@ st.set_page_config(
 )
 
 # -------------------------
+st.markdown("""
+    <style>
+    .login-container {
+        max-width: 400px;
+        margin: 100px auto;
+        padding: 2rem;
+        background-color: #f9f9f9;
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        text-align: center;
+    }
+    .login-container h1 {
+        margin-bottom: 1.5rem;
+        font-size: 2rem;
+        color: #333;
+    }
+    body {
+        background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center center;
+    }
+    .stApp {
+        font-family: 'Arial', sans-serif;
+        margin-top: 30px;
+    }
+    .stSidebarMenu {
+        background-color: #2a3f54;
+        color: #fff;
+    }
+    .stSidebarMenu .st-ae {
+        background-color: #1c2c3d;
+        font-size: 18px;
+        color: #f0f0f0;
+    }
+    .stButton>button {
+        background-color: #3a4f66;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Atur session
+st.session_state.logged_in = st.session_state.get('logged_in', False)
+
+if not st.session_state.logged_in:
+    with st.container():
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Gambar icon user kecil
+        st.markdown("<h1>Login ke Sistem</h1>", unsafe_allow_html=True)
+
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if st.button("Login"):
+            if username == "litbang" and password == "12345":
+                st.session_state.logged_in = True
+                st.success("Login berhasil!")
+                st.rerun()
+            else:
+                st.error("Username atau Password salah.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop()
+
+# -------------------------
 # Sidebar Navigasi
 # -------------------------
 with st.sidebar:
