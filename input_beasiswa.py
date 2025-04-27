@@ -135,12 +135,13 @@ with st.sidebar:
     st.title("🌍 Beasiswa Dashboard")
     st.markdown("---")
     menu = st.radio("Navigasi Menu", 
-        ["🏠 Dashboard", "⬆️ Upload Data", "📄 Data Tersimpan", 
-         "✏️ Edit Data", "🗑️ Hapus Data", "📊 Grafik", 
-         "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database"]
-    )
+    ["🏠 Dashboard", "⬆️ Upload Data", "➕ Tambah Data Manual", "📄 Data Tersimpan", 
+     "✏️ Edit Data", "🗑️ Hapus Data", "📊 Grafik", 
+     "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database"]
+)
+
     st.markdown("---")
-    st.caption("Dibuat oleh: Tim Litbang IHBS")
+    st.caption("Dibuat oleh: Tim Beasiswa Global")
 
 # -------------------------
 # Tampilan Dashboard
@@ -198,6 +199,33 @@ elif menu == "📄 Data Tersimpan":
     st.dataframe(df_db, use_container_width=True)
 
 # -------------------------
+# -------------------------
+# Tambah Data Manual
+# -------------------------
+elif menu == "➕ Tambah Data Manual":
+    st.title("➕ Tambah Data Beasiswa Manual")
+
+    st.info("Isi form di bawah ini untuk menambah data beasiswa ke database:")
+
+    with st.form("form_tambah_manual"):
+        id_beasiswa = st.text_input("ID Beasiswa (harus unik)", placeholder="Contoh: B001")
+        benua = st.text_input("Benua", placeholder="Contoh: Asia")
+        asal_beasiswa = st.text_input("Asal Beasiswa", placeholder="Contoh: Jepang")
+        nama_lembaga = st.text_input("Nama Lembaga", placeholder="Contoh: MEXT")
+        top_univ = st.text_input("Top Universitas (opsional)", placeholder="Contoh: University of Tokyo")
+        program_beasiswa = st.text_input("Program Beasiswa", placeholder="Contoh: S2")
+        jenis_beasiswa = st.text_input("Jenis Beasiswa", placeholder="Contoh: Fully Funded")
+        link = st.text_input("Link Informasi", placeholder="Contoh: https://example.com")
+
+        submitted = st.form_submit_button("💾 Simpan Data")
+        if submitted:
+            if not id_beasiswa:
+                st.error("ID Beasiswa wajib diisi!")
+            else:
+                new_data = [(id_beasiswa, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, link)]
+                insert_data(new_data)
+                st.success(f"Data Beasiswa {id_beasiswa} berhasil ditambahkan!")
+
 # Edit Data
 # -------------------------
 elif menu == "✏️ Edit Data":
