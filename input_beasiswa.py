@@ -117,7 +117,7 @@ if not st.session_state.logged_in:
         password = st.text_input("Password", type="password")
         
         if st.button("Login"):
-            if username == "litbang" and password == "12345":
+            if username == "litbang" and password == "G12345":
                 st.session_state.logged_in = True
                 st.success("Login berhasil!")
                 st.rerun()
