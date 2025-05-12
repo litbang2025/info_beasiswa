@@ -8,7 +8,7 @@ from io import BytesIO
 # Fungsi koneksi database
 # -------------------------
 def get_connection():
-    return sqlite3.connect("database_beasiswa.db")
+    return sqlite3.connect("beasiswa.db")
 
 # -------------------------
 # Fungsi insert, fetch, delete, update
@@ -17,11 +17,13 @@ def insert_data(data):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.executemany("""
-        INSERT OR IGNORE INTO beasiswa (id, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, link)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO beasiswa 
+        (id, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, data)
     conn.commit()
     conn.close()
+
 
 def fetch_data():
     conn = get_connection()
@@ -42,11 +44,12 @@ def update_data_by_id(id_value, updated_row):
     cursor.execute("""
         UPDATE beasiswa
         SET benua=?, asal_beasiswa=?, nama_lembaga=?, top_univ=?,
-            program_beasiswa=?, jenis_beasiswa=?, link=?
+            program_beasiswa=?, jenis_beasiswa=?, persyaratan=?, benefit=?, waktu_pendaftaran=?, link=?
         WHERE id=?
-    """, (updated_row[0], updated_row[1], updated_row[2], updated_row[3], updated_row[4], updated_row[5], updated_row[6], id_value))
+    """, (updated_row[0], updated_row[1], updated_row[2], updated_row[3], updated_row[4], updated_row[5], updated_row[6], updated_row[7], updated_row[8], updated_row[9], id_value))
     conn.commit()
     conn.close()
+
 
 # -------------------------
 # UI Streamlit
@@ -160,6 +163,51 @@ if menu == "🏠 Dashboard":
     st.subheader("Visualisasi Singkat")
     fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
     st.plotly_chart(fig, use_container_width=True)
+    
+     # Tambahkan filter untuk program beasiswa, nama lembaga, dan persyaratan
+    st.markdown("---")
+    st.subheader("Filter Data Beasiswa")
+    
+    # Filter berdasarkan Program Beasiswa
+    program_filter = st.selectbox(
+        "Pilih Program Beasiswa:",
+        ["Semua Program"] + df_db['program_beasiswa'].unique().tolist()
+    )
+    
+    # Filter berdasarkan Nama Lembaga
+    lembaga_filter = st.selectbox(
+        "Pilih Nama Lembaga:",
+        ["Semua Lembaga"] + df_db['nama_lembaga'].unique().tolist()
+    )
+
+    # Filter berdasarkan Persyaratan
+    persyaratan_filter = st.selectbox(
+        "Pilih Persyaratan:",
+        ["Semua Persyaratan"] + df_db['persyaratan'].unique().tolist()
+    )
+
+    # Filter data berdasarkan pilihan
+    if program_filter != "Semua Program":
+        df_db = df_db[df_db['program_beasiswa'] == program_filter]
+    
+    if lembaga_filter != "Semua Lembaga":
+        df_db = df_db[df_db['nama_lembaga'] == lembaga_filter]
+    
+    if persyaratan_filter != "Semua Persyaratan":
+        df_db = df_db[df_db['persyaratan'] == persyaratan_filter]
+    
+    # Visualisasi distribusi beasiswa berdasarkan benua
+    st.markdown("---")
+    st.subheader("Visualisasi Singkat")
+    fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
+    
+    # Tambahkan key unik untuk plotly_chart agar tidak ada duplikasi ID
+    st.plotly_chart(fig, use_container_width=True, key="pie_chart_benua")
+    
+    # Menampilkan data yang ter-filter
+    st.markdown("---")
+    st.subheader("Data Beasiswa yang Terfilter")
+    st.dataframe(df_db)
 
 # -------------------------
 # Upload Data
@@ -215,6 +263,9 @@ elif menu == "➕ Tambah Data Manual":
         top_univ = st.text_input("Top Universitas (opsional)", placeholder="Contoh: University of Tokyo")
         program_beasiswa = st.text_input("Program Beasiswa", placeholder="Contoh: S2")
         jenis_beasiswa = st.text_input("Jenis Beasiswa", placeholder="Contoh: Fully Funded")
+        persyaratan = st.text_area("Persyaratan", placeholder="Contoh: IPK minimal 3.5")
+        benefit = st.text_area("Benefit", placeholder="Contoh: Beasiswa penuh")
+        waktu_pendaftaran = st.text_input("Waktu Pendaftaran", placeholder="Contoh: Januari - Februari")
         link = st.text_input("Link Informasi", placeholder="Contoh: https://example.com")
 
         submitted = st.form_submit_button("💾 Simpan Data")
@@ -222,9 +273,10 @@ elif menu == "➕ Tambah Data Manual":
             if not id_beasiswa:
                 st.error("ID Beasiswa wajib diisi!")
             else:
-                new_data = [(id_beasiswa, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, link)]
+                new_data = [(id_beasiswa, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link)]
                 insert_data(new_data)
                 st.success(f"Data Beasiswa {id_beasiswa} berhasil ditambahkan!")
+
 
 # Edit Data
 # -------------------------
@@ -243,11 +295,15 @@ elif menu == "✏️ Edit Data":
             topuniv = st.text_input("Top Univ", values[4])
             program = st.text_input("Program", values[5])
             jenis = st.text_input("Jenis", values[6])
-            link = st.text_input("Link", values[7])
+            persyaratan = st.text_area("Persyaratan", values[7])
+            benefit = st.text_area("Benefit", values[8])
+            waktu_pendaftaran = st.text_input("Waktu Pendaftaran", values[9])
+            link = st.text_input("Link", values[10])
 
             if st.button("💾 Update"):
-                update_data_by_id(id_edit, [benua, asal, lembaga, topuniv, program, jenis, link])
+                update_data_by_id(id_edit, [benua, asal, lembaga, topuniv, program, jenis, persyaratan, benefit, waktu_pendaftaran, link])
                 st.success("Data berhasil diupdate.")
+
 
 # -------------------------
 # Hapus Data
@@ -269,15 +325,57 @@ elif menu == "📊 Grafik":
     tab1, tab2 = st.tabs(["📊 Jenis Beasiswa", "🏛️ Top Universitas"])
 
     with tab1:
-        fig = px.pie(df_db, names='jenis_beasiswa', title='Distribusi Jenis Beasiswa', hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("📊 Distribusi Jenis Beasiswa")
+        
+        jenis_counts = df_db['jenis_beasiswa'].value_counts().reset_index()
+        jenis_counts.columns = ['Jenis Beasiswa', 'Jumlah']
+
+        fig = px.bar(
+            jenis_counts,
+            x='Jumlah',
+            y='Jenis Beasiswa',
+            orientation='h',
+            color='Jumlah',
+            title="Jumlah Beasiswa Berdasarkan Jenis",
+            color_continuous_scale='Blues'
+        )
+        st.plotly_chart(fig, use_container_width=True, key="chart_jenis_beasiswa")
+
+        # Penjelasan otomatis
+        most_common = jenis_counts.iloc[0]['Jenis Beasiswa']
+        most_common_pct = jenis_counts.iloc[0]['Jumlah'] / jenis_counts['Jumlah'].sum() * 100
+
+        st.markdown(f"""
+        ℹ️ **Penjelasan:**
+        Jenis beasiswa paling banyak adalah **{most_common}** dengan proporsi sekitar **{most_common_pct:.1f}%**
+        dari total jenis beasiswa. Ini menunjukkan fokus utama lembaga penyedia beasiswa saat ini.
+        """)
 
     with tab2:
+        st.subheader("🏛️ Top 10 Universitas Tujuan Beasiswa")
         top_univ_count = df_db['top_univ'].value_counts().nlargest(10).reset_index()
         top_univ_count.columns = ['Top Universitas', 'Jumlah Beasiswa']
-        fig = px.bar(top_univ_count, x='Jumlah Beasiswa', y='Top Universitas', orientation='h', color='Jumlah Beasiswa',
-                     title="Top 10 Universitas dengan Beasiswa Terbanyak", color_continuous_scale='Teal')
-        st.plotly_chart(fig, use_container_width=True)
+
+        fig = px.bar(
+            top_univ_count,
+            x='Jumlah Beasiswa',
+            y='Top Universitas',
+            orientation='h',
+            color='Jumlah Beasiswa',
+            title="Top 10 Universitas dengan Beasiswa Terbanyak",
+            color_continuous_scale='Teal'
+        )
+        st.plotly_chart(fig, use_container_width=True, key="chart_top_univ")
+
+        # Penjelasan otomatis
+        top_univ = top_univ_count.iloc[0]
+        st.markdown(f"""
+        ℹ️ **Penjelasan:**
+        Universitas dengan penerimaan beasiswa terbanyak adalah **{top_univ['Top Universitas']}**
+        dengan total **{top_univ['Jumlah Beasiswa']}** beasiswa tercatat dalam database.
+        Ini menunjukkan bahwa universitas ini menjadi salah satu tujuan favorit atau mitra utama dalam program-program beasiswa.
+        """)
+
 
 # -------------------------
 # Filter Data
@@ -314,11 +412,20 @@ elif menu == "📥 Download Data":
 # -------------------------
 elif menu == "⚠️ Reset Database":
     st.title("⚠️ Reset Seluruh Database Beasiswa")
-    if st.button("🚨 Hapus Semua Data"):
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM beasiswa")
-        conn.commit()
-        conn.close()
-        st.error("Semua data telah dihapus!")
+
+    st.warning("PERINGATAN: Tindakan ini akan menghapus **SELURUH data beasiswa** secara permanen. Harap berhati-hati!")
+
+    kode_verifikasi = st.text_input("Masukkan kode verifikasi admin untuk melanjutkan (ketik: xxx4):", type="password")
+
+    if kode_verifikasi == "6464":
+        if st.button("🚨 Hapus Semua Data"):
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM beasiswa")
+            conn.commit()
+            conn.close()
+            st.success("✅ Semua data telah berhasil dihapus!")
+    elif kode_verifikasi != "":
+        st.error("❌ Kode verifikasi salah. Silakan coba lagi.")
+
 
