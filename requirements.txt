@@ -3,3 +3,4 @@ Pandas
 Plotly
 XlsxWriter
 openpyxl
+fuzzywuzzy
