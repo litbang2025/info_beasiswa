@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 import plotly.express as px
 from io import BytesIO
+from fuzzywuzzy import process
 
 # -------------------------
 # Fungsi koneksi database
@@ -23,7 +24,6 @@ def insert_data(data):
     """, data)
     conn.commit()
     conn.close()
-
 
 def fetch_data():
     conn = get_connection()
@@ -50,6 +50,14 @@ def update_data_by_id(id_value, updated_row):
     conn.commit()
     conn.close()
 
+# -------------------------
+# Fungsi untuk membaca username dan password dari file Excel
+# -------------------------
+def read_credentials():
+    df = pd.read_excel("credentials.xlsx", engine='openpyxl')  
+    credentials = df.set_index('user')['password'].to_dict()
+    print(credentials)  # Debugging: Tampilkan kredensial yang dibaca
+    return credentials
 
 # -------------------------
 # UI Streamlit
@@ -64,44 +72,54 @@ st.set_page_config(
 # -------------------------
 st.markdown("""
     <style>
+    body {
+        background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center center;
+        color: #333;
+    }
     .login-container {
         max-width: 400px;
         margin: 100px auto;
         padding: 2rem;
-        background-color: #f9f9f9;
-        border-radius: 15px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        background-color: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         text-align: center;
+        animation: fadeIn 0.5s;
     }
     .login-container h1 {
         margin-bottom: 1.5rem;
         font-size: 2rem;
         color: #333;
     }
-    body {
-        background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1');
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-position: center center;
-    }
-    .stApp {
-        font-family: 'Arial', sans-serif;
-        margin-top: 30px;
-    }
-    .stSidebarMenu {
-        background-color: #2a3f54;
-        color: #fff;
-    }
-    .stSidebarMenu .st-ae {
-        background-color: #1c2c3d;
-        font-size: 18px;
-        color: #f0f0f0;
-    }
     .stButton>button {
-        background-color: #3a4f66;
+        background-color: #4CAF50;
         color: white;
-        border-radius: 8px;
+        border-radius: 5px;
         padding: 10px 20px;
+        transition: background-color 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #45a049;
+    }
+    .stDataFrame {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+        background-color: #2a3f54;
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -116,16 +134,22 @@ if not st.session_state.logged_in:
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Gambar icon user kecil
         st.markdown("<h1>Login ke Sistem</h1>", unsafe_allow_html=True)
 
+        # Membaca kredensial dari file Excel
+        credentials = read_credentials()
+
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         
         if st.button("Login"):
-            if username == "litbang" and password == "6464":
-                st.session_state.logged_in = True
-                st.success("Login berhasil!")
-                st.rerun()
+            if username in credentials:
+                if credentials[username] == password:
+                    st.session_state.logged_in = True
+                    st.success("Login berhasil!")
+                    st.rerun()
+                else:
+                    st.error("Password salah.")
             else:
-                st.error("Username atau Password salah.")
+                st.error("Username tidak ditemukan.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -153,7 +177,7 @@ if menu == "🏠 Dashboard":
     st.title("🎯 Dashboard Beasiswa Global")
     df_db = fetch_data()
 
-    st.subheader("Statistik Ringkas")
+    st.markdown('<div class="header"><h2>Statistik Ringkas</h2></div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     col1.metric("Jumlah Beasiswa", len(df_db))
     col2.metric("Negara Asal Unik", df_db['asal_beasiswa'].nunique())
@@ -164,27 +188,19 @@ if menu == "🏠 Dashboard":
     fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
     st.plotly_chart(fig, use_container_width=True)
     
-     # Tambahkan filter untuk program beasiswa, nama lembaga, dan persyaratan
+    # Tambahkan filter untuk program beasiswa, nama lembaga, dan persyaratan
     st.markdown("---")
     st.subheader("Filter Data Beasiswa")
     
-    # Filter berdasarkan Program Beasiswa
-    program_filter = st.selectbox(
-        "Pilih Program Beasiswa:",
-        ["Semua Program"] + df_db['program_beasiswa'].unique().tolist()
-    )
-    
-    # Filter berdasarkan Nama Lembaga
-    lembaga_filter = st.selectbox(
-        "Pilih Nama Lembaga:",
-        ["Semua Lembaga"] + df_db['nama_lembaga'].unique().tolist()
-    )
-
-    # Filter berdasarkan Persyaratan
-    persyaratan_filter = st.selectbox(
-        "Pilih Persyaratan:",
-        ["Semua Persyaratan"] + df_db['persyaratan'].unique().tolist()
-    )
+    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+    with filter_col1:
+        program_filter = st.selectbox("Pilih Program Beasiswa:", ["Semua Program"] + df_db['program_beasiswa'].unique().tolist())
+    with filter_col2:
+        lembaga_filter = st.selectbox("Pilih Nama Lembaga:", ["Semua Lembaga"] + df_db['nama_lembaga'].unique().tolist())
+    with filter_col3:
+        persyaratan_filter = st.selectbox("Pilih Persyaratan:", ["Semua Persyaratan"] + df_db['persyaratan'].unique().tolist())
+    with filter_col4:
+        top_univ_filter = st.selectbox("Pilih Top Universitas:", ["Semua Universitas"] + df_db['top_univ'].unique().tolist())
 
     # Filter data berdasarkan pilihan
     if program_filter != "Semua Program":
@@ -196,13 +212,8 @@ if menu == "🏠 Dashboard":
     if persyaratan_filter != "Semua Persyaratan":
         df_db = df_db[df_db['persyaratan'] == persyaratan_filter]
     
-    # Visualisasi distribusi beasiswa berdasarkan benua
-    st.markdown("---")
-    st.subheader("Visualisasi Singkat")
-    fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
-    
-    # Tambahkan key unik untuk plotly_chart agar tidak ada duplikasi ID
-    st.plotly_chart(fig, use_container_width=True, key="pie_chart_benua")
+    if top_univ_filter != "Semua Universitas":
+        df_db = df_db[df_db['top_univ'] == top_univ_filter]
     
     # Menampilkan data yang ter-filter
     st.markdown("---")
@@ -242,11 +253,12 @@ elif menu == "📄 Data Tersimpan":
     with st.expander("🔍 Cari Data"):
         keyword = st.text_input("Masukkan kata kunci pencarian")
         if keyword:
-            df_db = df_db[df_db.apply(lambda row: row.astype(str).str.contains(keyword, case=False).any(), axis=1)]
+            # Mencocokkan nama lembaga dengan fuzzy matching
+            df_db['match_score'] = df_db['nama_lembaga'].apply(lambda x: process.extractOne(keyword, [x])[1])
+            df_db = df_db[df_db['match_score'] > 70].drop(columns='match_score')  # Ambil yang match score > 70
 
     st.dataframe(df_db, use_container_width=True)
 
-# -------------------------
 # -------------------------
 # Tambah Data Manual
 # -------------------------
@@ -277,7 +289,6 @@ elif menu == "➕ Tambah Data Manual":
                 insert_data(new_data)
                 st.success(f"Data Beasiswa {id_beasiswa} berhasil ditambahkan!")
 
-
 # Edit Data
 # -------------------------
 elif menu == "✏️ Edit Data":
@@ -303,7 +314,6 @@ elif menu == "✏️ Edit Data":
             if st.button("💾 Update"):
                 update_data_by_id(id_edit, [benua, asal, lembaga, topuniv, program, jenis, persyaratan, benefit, waktu_pendaftaran, link])
                 st.success("Data berhasil diupdate.")
-
 
 # -------------------------
 # Hapus Data
@@ -376,7 +386,6 @@ elif menu == "📊 Grafik":
         Ini menunjukkan bahwa universitas ini menjadi salah satu tujuan favorit atau mitra utama dalam program-program beasiswa.
         """)
 
-
 # -------------------------
 # Filter Data
 # -------------------------
@@ -427,5 +436,3 @@ elif menu == "⚠️ Reset Database":
             st.success("✅ Semua data telah berhasil dihapus!")
     elif kode_verifikasi != "":
         st.error("❌ Kode verifikasi salah. Silakan coba lagi.")
-
-
