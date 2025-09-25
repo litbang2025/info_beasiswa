@@ -4,6 +4,12 @@ import sqlite3
 import plotly.express as px
 from io import BytesIO
 from fuzzywuzzy import process
+import requests
+from datetime import datetime, timedelta
+import base64
+from fpdf import FPDF
+import warnings
+warnings.filterwarnings('ignore')
 
 # -------------------------
 # Fungsi koneksi database
@@ -19,8 +25,8 @@ def insert_data(data):
     cursor = conn.cursor()
     cursor.executemany("""
         INSERT OR IGNORE INTO beasiswa 
-        (id, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, data)
     conn.commit()
     conn.close()
@@ -54,171 +60,361 @@ def update_data_by_id(id_value, updated_row):
 # Fungsi untuk membaca username dan password dari file Excel
 # -------------------------
 def read_credentials():
-    df = pd.read_excel("credentials.xlsx", engine='openpyxl')  
-    credentials = df.set_index('user')['password'].to_dict()
-    print(credentials)  # Debugging: Tampilkan kredensial yang dibaca
-    return credentials
+    try:
+        df = pd.read_excel("credentials.xlsx", engine='openpyxl')  
+        credentials = df.set_index('user')['password'].to_dict()
+        return credentials
+    except:
+        # Default credentials jika file tidak ada
+        return {"admin": "admin123"}
+
+# -------------------------
+# Fungsi untuk generate PDF
+# -------------------------
+def create_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Data Beasiswa Global", ln=1, align='C')
+    pdf.ln(10)
+    
+    # Header tabel
+    headers = df.columns.tolist()
+    for header in headers:
+        pdf.cell(40, 10, txt=header, border=1)
+    pdf.ln()
+    
+    # Data tabel
+    for _, row in df.iterrows():
+        for item in row:
+            pdf.cell(40, 10, txt=str(item)[:20], border=1)
+        pdf.ln()
+    
+    return pdf.output(dest='S').encode('latin-1')
+
+# -------------------------
+# Fungsi untuk notifikasi beasiswa yang akan tutup
+# -------------------------
+def check_closing_scholarships():
+    df = fetch_data()
+    today = datetime.now()
+    closing_soon = []
+    
+    for _, row in df.iterrows():
+        if pd.notna(row['waktu_pendaftaran']):
+            try:
+                # Parse tanggal (format: "Januari - Februari" atau "1-15 Januari")
+                if '-' in row['waktu_pendaftaran']:
+                    parts = row['waktu_pendaftaran'].split('-')
+                    if len(parts) == 2:
+                        month = parts[1].strip()
+                        # Cek jika bulan depan adalah bulan sekarang atau bulan depan
+                        if month.lower() in [today.strftime("%B").lower(), 
+                                           (today + timedelta(days=30)).strftime("%B").lower()]:
+                            closing_soon.append(row['nama_lembaga'])
+            except:
+                pass
+    
+    return closing_soon
+
+# -------------------------
+# Fungsi untuk integrasi API sederhana
+# -------------------------
+def fetch_external_scholarships():
+    try:
+        # Contoh API (ganti dengan API real)
+        response = requests.get("https://api.example.com/scholarships", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return pd.DataFrame(data)
+    except:
+        pass
+    return pd.DataFrame()
 
 # -------------------------
 # UI Streamlit
 # -------------------------
 st.set_page_config(
-    page_title="🎓 Data Beasiswa Global",
-    page_icon="🎯",
+    page_title="🎓 Portal Beasiswa Global",
+    page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # -------------------------
+# CSS yang ditingkatkan dengan mobile responsiveness
+# -------------------------
 st.markdown("""
-    <style>
+<style>
+    :root {
+        --primary: #1e88e5;
+        --secondary: #43a047;
+        --accent: #8e24aa;
+        --background: rgba(255, 255, 255, 0.85);
+        --card-bg: #ffffff;
+        --text: #263238;
+    }
+    
     body {
-        background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1');
+        background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
+                          url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1');
         background-size: cover;
-        background-repeat: no-repeat;
-        background-position: center center;
-        color: #333;
+        background-attachment: fixed;
+        color: var(--text);
     }
-    .login-container {
-        max-width: 400px;
-        margin: 100px auto;
+    
+    .main-header {
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
         padding: 2rem;
-        background-color: #ffffff;
-        border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border-radius: 15px;
+        color: white;
         text-align: center;
-        animation: fadeIn 0.5s;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        margin-bottom: 2rem;
     }
-    .login-container h1 {
-        margin-bottom: 1.5rem;
-        font-size: 2rem;
-        color: #333;
+    
+    .metric-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: transform 0.3s, box-shadow 0.3s;
+        border-left: 5px solid var(--primary);
     }
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+    
+    .chart-container {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        margin-bottom: 2rem;
+    }
+    
+    .sidebar-content {
+        background: var(--background);
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
     .stButton>button {
-        background-color: #4CAF50;
+        background-color: var(--primary);
         color: white;
-        border-radius: 5px;
-        padding: 10px 20px;
-        transition: background-color 0.3s;
+        border-radius: 8px;
+        padding: 0.5rem 1.2rem;
+        transition: all 0.3s;
+        font-weight: 600;
     }
+    
     .stButton>button:hover {
-        background-color: #45a049;
+        background-color: #1565c0;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
-    .stDataFrame {
-        border-radius: 10px;
+    
+    .data-frame {
+        border-radius: 12px;
         overflow: hidden;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
-    .header {
-        background-color: #2a3f54;
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        margin-bottom: 20px;
+    
+    .login-container {
+        background: var(--card-bg);
+        border-radius: 15px;
+        padding: 2.5rem;
+        max-width: 450px;
+        margin: 8rem auto;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        animation: slideIn 0.5s ease-out;
     }
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
+    
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
-    </style>
+    
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .main-header {
+            padding: 1rem;
+        }
+        
+        .metric-card {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .chart-container {
+            padding: 1rem;
+        }
+        
+        .sidebar-content {
+            padding: 1rem;
+        }
+    }
+    
+    /* Notification styles */
+    .notification {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        border-left: 4px solid;
+    }
+    
+    .notification-warning {
+        background-color: #fff3cd;
+        border-color: #ffc107;
+        color: #856404;
+    }
+    
+    .notification-success {
+        background-color: #d4edda;
+        border-color: #28a745;
+        color: #155724;
+    }
+</style>
 """, unsafe_allow_html=True)
 
-# Atur session
-st.session_state.logged_in = st.session_state.get('logged_in', False)
+# -------------------------
+# Atur session state
+# -------------------------
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'notifications' not in st.session_state:
+    st.session_state.notifications = []
 
+# -------------------------
+# Halaman Login
+# -------------------------
 if not st.session_state.logged_in:
-    with st.container():
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-
-        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)  # Gambar icon user kecil
-        st.markdown("<h1>Login ke Sistem</h1>", unsafe_allow_html=True)
-
-        # Membaca kredensial dari file Excel
-        credentials = read_credentials()
-
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    st.markdown("""
+    <div class="login-container">
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <img src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" width="100" style="margin-bottom: 1rem;">
+            <h1 style="margin-bottom: 0.5rem;">Portal Beasiswa Global</h1>
+            <p style="color: #666;">Masuk untuk mengakses database beasiswa</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Membaca kredensial dari file Excel
+    credentials = read_credentials()
+    
+    with st.form("login_form"):
+        username = st.text_input("Username", placeholder="Masukkan username")
+        password = st.text_input("Password", type="password", placeholder="Masukkan password")
         
-        if st.button("Login"):
+        if st.form_submit_button("Login"):
             if username in credentials:
                 if credentials[username] == password:
                     st.session_state.logged_in = True
-                    st.success("Login berhasil!")
+                    st.success("Login berhasil! Mengalihkan ke dashboard...")
                     st.rerun()
                 else:
-                    st.error("Password salah.")
+                    st.error("Password salah. Silakan coba lagi.")
             else:
                 st.error("Username tidak ditemukan.")
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
+    
+    st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; color: #666; font-size: 0.9rem;">
+            <p>Hubungi admin untuk mendapatkan akses</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.stop()
 
 # -------------------------
 # Sidebar Navigasi
 # -------------------------
 with st.sidebar:
+    st.markdown('<div class="sidebar-content">', unsafe_allow_html=True)
     st.title("🌍 Beasiswa Dashboard")
+    st.caption("Platform informasi beasiswa global")
     st.markdown("---")
-    menu = st.radio("Navigasi Menu", 
-    ["🏠 Dashboard", "⬆️ Upload Data", "➕ Tambah Data Manual", "📄 Data Tersimpan", 
-     "✏️ Edit Data", "🗑️ Hapus Data", "📊 Grafik", 
-     "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database"]
-)
+    
+    menu = st.selectbox(
+        "Navigasi Menu", 
+        ["🏠 Dashboard", "⬆️ Upload Data", "➕ Tambah Data Manual", "📄 Data Tersimpan", 
+         "✏️ Edit Data", "🗑️ Hapus Data", "📊 Grafik", 
+         "🔎 Filter Data", "📥 Download Data", "⚠️ Reset Database", "🔗 Integrasi API"],
+         index=0
+    )
+    
+    st.markdown("---")
+    st.markdown("### 📈 Statistik Cepat")
+    df_db = fetch_data()
+    st.metric("Total Beasiswa", len(df_db))
+    st.metric("Negara", df_db['asal_beasiswa'].nunique())
+    
+    st.markdown("---")
+    if st.button("🚪 Logout"):
+        st.session_state.logged_in = False
+        st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.caption("Dibuat oleh: Tim Beasiswa Global")
+# -------------------------
+# Notifikasi Beasiswa yang Akan Tutup
+# -------------------------
+closing_soon = check_closing_scholarships()
+if closing_soon:
+    for scholarship in closing_soon:
+        st.markdown(f"""
+        <div class="notification notification-warning">
+            <strong>⏰ Peringatan:</strong> Pendaftaran beasiswa dari {scholarship} akan segera ditutup!
+        </div>
+        """, unsafe_allow_html=True)
 
 # -------------------------
 # Tampilan Dashboard
 # -------------------------
 if menu == "🏠 Dashboard":
-    st.title("🎯 Dashboard Beasiswa Global")
+    st.markdown('<div class="main-header"><h1>🌍 Portal Beasiswa Global</h1><p>Platform informasi beasiswa internasional terlengkap</p></div>', unsafe_allow_html=True)
+    
     df_db = fetch_data()
-
-    st.markdown('<div class="header"><h2>Statistik Ringkas</h2></div>', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Jumlah Beasiswa", len(df_db))
-    col2.metric("Negara Asal Unik", df_db['asal_beasiswa'].nunique())
-    col3.metric("Program Beasiswa Unik", df_db['program_beasiswa'].nunique())
-
+    
+    # Statistik dengan kartu yang lebih menarik
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown('<div class="metric-card"><h3>📚 Total Beasiswa</h3><h2>{}</h2></div>'.format(len(df_db)), unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="metric-card"><h3>🌏 Negara</h3><h2>{}</h2></div>'.format(df_db['asal_beasiswa'].nunique()), unsafe_allow_html=True)
+    with col3:
+        st.markdown('<div class="metric-card"><h3>🏛️ Universitas</h3><h2>{}</h2></div>'.format(df_db['top_univ'].nunique()), unsafe_allow_html=True)
+    with col4:
+        st.markdown('<div class="metric-card"><h3>🎓 Program</h3><h2>{}</h2></div>'.format(df_db['program_beasiswa'].nunique()), unsafe_allow_html=True)
+    
     st.markdown("---")
-    st.subheader("Visualisasi Singkat")
-    fig = px.pie(df_db, names='benua', title="Distribusi Beasiswa berdasarkan Benua")
-    st.plotly_chart(fig, use_container_width=True)
     
-    # Tambahkan filter untuk program beasiswa, nama lembaga, dan persyaratan
-    st.markdown("---")
-    st.subheader("Filter Data Beasiswa")
+    # Visualisasi dengan container yang lebih baik
+    col1, col2 = st.columns(2)
     
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-    with filter_col1:
-        program_filter = st.selectbox("Pilih Program Beasiswa:", ["Semua Program"] + df_db['program_beasiswa'].unique().tolist())
-    with filter_col2:
-        lembaga_filter = st.selectbox("Pilih Nama Lembaga:", ["Semua Lembaga"] + df_db['nama_lembaga'].unique().tolist())
-    with filter_col3:
-        persyaratan_filter = st.selectbox("Pilih Persyaratan:", ["Semua Persyaratan"] + df_db['persyaratan'].unique().tolist())
-    with filter_col4:
-        top_univ_filter = st.selectbox("Pilih Top Universitas:", ["Semua Universitas"] + df_db['top_univ'].unique().tolist())
-
-    # Filter data berdasarkan pilihan
-    if program_filter != "Semua Program":
-        df_db = df_db[df_db['program_beasiswa'] == program_filter]
+    with col1:
+        st.markdown('<div class="chart-container"><h3>📊 Distribusi Beasiswa per Benua</h3>', unsafe_allow_html=True)
+        fig = px.pie(df_db, names='benua', hole=0.4, color_discrete_sequence=px.colors.qualitative.Plotly)
+        fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    if lembaga_filter != "Semua Lembaga":
-        df_db = df_db[df_db['nama_lembaga'] == lembaga_filter]
+    with col2:
+        st.markdown('<div class="chart-container"><h3>📈 Jenis Beasiswa Populer</h3>', unsafe_allow_html=True)
+        jenis_counts = df_db['jenis_beasiswa'].value_counts().nlargest(5)
+        fig = px.bar(x=jenis_counts.values, y=jenis_counts.index, orientation='h', 
+                     color=jenis_counts.values, color_continuous_scale='Blues')
+        fig.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
-    if persyaratan_filter != "Semua Persyaratan":
-        df_db = df_db[df_db['persyaratan'] == persyaratan_filter]
-    
-    if top_univ_filter != "Semua Universitas":
-        df_db = df_db[df_db['top_univ'] == top_univ_filter]
-    
-    # Menampilkan data yang ter-filter
-    st.markdown("---")
-    st.subheader("Data Beasiswa yang Terfilter")
-    st.dataframe(df_db)
+    # Tabel data terbaru
+    st.markdown('<div class="chart-container"><h3>📋 Beasiswa Terbaru</h3>', unsafe_allow_html=True)
+    st.dataframe(df_db.sort_values('id', ascending=False).head(10), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Upload Data
@@ -240,8 +436,12 @@ elif menu == "⬆️ Upload Data":
             data = data[1:]
 
         if st.button("✅ Simpan ke Database"):
-            insert_data(data)
+            # Tambahkan timestamp
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            data_with_time = [row + [current_time] for row in data]
+            insert_data(data_with_time)
             st.success("Data berhasil disimpan!")
+            st.balloons()
 
 # -------------------------
 # Data Tersimpan
@@ -264,31 +464,47 @@ elif menu == "📄 Data Tersimpan":
 # -------------------------
 elif menu == "➕ Tambah Data Manual":
     st.title("➕ Tambah Data Beasiswa Manual")
-
-    st.info("Isi form di bawah ini untuk menambah data beasiswa ke database:")
-
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    
     with st.form("form_tambah_manual"):
-        id_beasiswa = st.text_input("ID Beasiswa (harus unik)", placeholder="Contoh: B001")
-        benua = st.text_input("Benua", placeholder="Contoh: Asia")
-        asal_beasiswa = st.text_input("Asal Beasiswa", placeholder="Contoh: Jepang")
-        nama_lembaga = st.text_input("Nama Lembaga", placeholder="Contoh: MEXT")
-        top_univ = st.text_input("Top Universitas (opsional)", placeholder="Contoh: University of Tokyo")
-        program_beasiswa = st.text_input("Program Beasiswa", placeholder="Contoh: S2")
-        jenis_beasiswa = st.text_input("Jenis Beasiswa", placeholder="Contoh: Fully Funded")
-        persyaratan = st.text_area("Persyaratan", placeholder="Contoh: IPK minimal 3.5")
-        benefit = st.text_area("Benefit", placeholder="Contoh: Beasiswa penuh")
-        waktu_pendaftaran = st.text_input("Waktu Pendaftaran", placeholder="Contoh: Januari - Februari")
-        link = st.text_input("Link Informasi", placeholder="Contoh: https://example.com")
-
+        st.markdown("### 📝 Informasi Beasiswa")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            id_beasiswa = st.text_input("ID Beasiswa *", placeholder="Contoh: B001", help="ID unik untuk identifikasi beasiswa")
+            benua = st.selectbox("Benua *", ["Asia", "Eropa", "Amerika", "Afrika", "Oseania"])
+            asal_beasiswa = st.text_input("Asal Beasiswa *", placeholder="Contoh: Jepang")
+            nama_lembaga = st.text_input("Nama Lembaga *", placeholder="Contoh: MEXT")
+        
+        with col2:
+            top_univ = st.text_input("Top Universitas", placeholder="Contoh: University of Tokyo")
+            program_beasiswa = st.selectbox("Program Beasiswa *", ["S1", "S2", "S3", "Non-Gelar"])
+            jenis_beasiswa = st.selectbox("Jenis Beasiswa *", ["Fully Funded", "Partial", "Tuition Only"])
+            waktu_pendaftaran = st.text_input("Waktu Pendaftaran", placeholder="Contoh: Januari - Februari")
+        
+        st.markdown("### 📄 Detail Beasiswa")
+        col1, col2 = st.columns(2)
+        with col1:
+            persyaratan = st.text_area("Persyaratan *", placeholder="Contoh: IPK minimal 3.5", height=150)
+        with col2:
+            benefit = st.text_area("Benefit *", placeholder="Contoh: Beasiswa penuh", height=150)
+        
+        link = st.text_input("Link Informasi *", placeholder="https://example.com")
+        
         submitted = st.form_submit_button("💾 Simpan Data")
         if submitted:
-            if not id_beasiswa:
-                st.error("ID Beasiswa wajib diisi!")
+            if not all([id_beasiswa, benua, asal_beasiswa, nama_lembaga, program_beasiswa, jenis_beasiswa, persyaratan, benefit, link]):
+                st.error("Harap isi semua field yang ditandai dengan *")
             else:
-                new_data = [(id_beasiswa, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link)]
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                new_data = [(id_beasiswa, benua, asal_beasiswa, nama_lembaga, top_univ, program_beasiswa, jenis_beasiswa, persyaratan, benefit, waktu_pendaftaran, link, current_time)]
                 insert_data(new_data)
                 st.success(f"Data Beasiswa {id_beasiswa} berhasil ditambahkan!")
+                st.balloons()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# -------------------------
 # Edit Data
 # -------------------------
 elif menu == "✏️ Edit Data":
@@ -314,6 +530,7 @@ elif menu == "✏️ Edit Data":
             if st.button("💾 Update"):
                 update_data_by_id(id_edit, [benua, asal, lembaga, topuniv, program, jenis, persyaratan, benefit, waktu_pendaftaran, link])
                 st.success("Data berhasil diupdate.")
+                st.balloons()
 
 # -------------------------
 # Hapus Data
@@ -324,97 +541,218 @@ elif menu == "🗑️ Hapus Data":
     if st.button("⚡ Hapus Data"):
         delete_data_by_id(id_delete)
         st.warning(f"Data dengan ID {id_delete} telah dihapus.")
+        st.balloons()
 
 # -------------------------
 # Grafik
 # -------------------------
 elif menu == "📊 Grafik":
-    st.title("📊 Visualisasi Data Beasiswa")
+    st.title("📊 Analisis Data Beasiswa")
     df_db = fetch_data()
-
-    tab1, tab2 = st.tabs(["📊 Jenis Beasiswa", "🏛️ Top Universitas"])
-
+    
+    tab1, tab2, tab3 = st.tabs(["📊 Jenis Beasiswa", "🏛️ Universitas", "🌍 Distribusi Geografis"])
+    
     with tab1:
-        st.subheader("📊 Distribusi Jenis Beasiswa")
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.subheader("Distribusi Jenis Beasiswa")
         
         jenis_counts = df_db['jenis_beasiswa'].value_counts().reset_index()
         jenis_counts.columns = ['Jenis Beasiswa', 'Jumlah']
-
+        
         fig = px.bar(
             jenis_counts,
-            x='Jumlah',
-            y='Jenis Beasiswa',
-            orientation='h',
+            x='Jenis Beasiswa',
+            y='Jumlah',
             color='Jumlah',
-            title="Jumlah Beasiswa Berdasarkan Jenis",
-            color_continuous_scale='Blues'
+            color_continuous_scale='Blues',
+            text='Jumlah'
         )
-        st.plotly_chart(fig, use_container_width=True, key="chart_jenis_beasiswa")
-
-        # Penjelasan otomatis
+        fig.update_traces(texttemplate='%{text}', textposition='outside')
+        fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Analisis otomatis
         most_common = jenis_counts.iloc[0]['Jenis Beasiswa']
         most_common_pct = jenis_counts.iloc[0]['Jumlah'] / jenis_counts['Jumlah'].sum() * 100
-
+        
         st.markdown(f"""
-        ℹ️ **Penjelasan:**
-        Jenis beasiswa paling banyak adalah **{most_common}** dengan proporsi sekitar **{most_common_pct:.1f}%**
-        dari total jenis beasiswa. Ini menunjukkan fokus utama lembaga penyedia beasiswa saat ini.
-        """)
-
+        <div style="background:#e3f2fd; padding:15px; border-radius:10px; margin-top:20px;">
+            <h4>🔍 Analisis:</h4>
+            <p>Jenis beasiswa paling banyak adalah <b>{most_common}</b> dengan proporsi <b>{most_common_pct:.1f}%</b> 
+            dari total beasiswa. Ini menunjukkan bahwa sebagian besar penyedia beasiswa menawarkan 
+            pendanaan penuh kepada penerima.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
     with tab2:
-        st.subheader("🏛️ Top 10 Universitas Tujuan Beasiswa")
-        top_univ_count = df_db['top_univ'].value_counts().nlargest(10).reset_index()
-        top_univ_count.columns = ['Top Universitas', 'Jumlah Beasiswa']
-
-        fig = px.bar(
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.subheader("Top 15 Universitas Tujuan Beasiswa")
+        top_univ_count = df_db['top_univ'].value_counts().nlargest(15).reset_index()
+        top_univ_count.columns = ['Universitas', 'Jumlah Beasiswa']
+        
+        fig = px.treemap(
             top_univ_count,
-            x='Jumlah Beasiswa',
-            y='Top Universitas',
-            orientation='h',
+            path=['Universitas'],
+            values='Jumlah Beasiswa',
             color='Jumlah Beasiswa',
-            title="Top 10 Universitas dengan Beasiswa Terbanyak",
-            color_continuous_scale='Teal'
+            color_continuous_scale='RdYlGn',
+            title="Universitas dengan Beasiswa Terbanyak"
         )
-        st.plotly_chart(fig, use_container_width=True, key="chart_top_univ")
-
-        # Penjelasan otomatis
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Analisis otomatis
         top_univ = top_univ_count.iloc[0]
         st.markdown(f"""
-        ℹ️ **Penjelasan:**
-        Universitas dengan penerimaan beasiswa terbanyak adalah **{top_univ['Top Universitas']}**
-        dengan total **{top_univ['Jumlah Beasiswa']}** beasiswa tercatat dalam database.
-        Ini menunjukkan bahwa universitas ini menjadi salah satu tujuan favorit atau mitra utama dalam program-program beasiswa.
-        """)
+        <div style="background:#e8f5e9; padding:15px; border-radius:10px; margin-top:20px;">
+            <h4>🔍 Analisis:</h4>
+            <p><b>{top_univ['Universitas']}</b> adalah universitas dengan beasiswa terbanyak 
+            ({top_univ['Jumlah Beasiswa']} beasiswa). Universitas ini menjadi tujuan utama 
+            bagi para pelamar beasiswa internasional.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with tab3:
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.subheader("Distribusi Geografis Beasiswa")
+        
+        # Hitung data per negara
+        country_counts = df_db['asal_beasiswa'].value_counts().reset_index()
+        country_counts.columns = ['Negara', 'Jumlah Beasiswa']
+        
+        # Peta dunia
+        fig = px.choropleth(
+            country_counts,
+            locations="Negara",
+            locationmode='country names',
+            color="Jumlah Beasiswa",
+            hover_name="Negara",
+            color_continuous_scale=px.colors.sequential.Plasma,
+            title="Distribusi Beasiswa per Negara"
+        )
+        fig.update_geos(showcountries=True, showcoastlines=True)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Analisis otomatis
+        top_country = country_counts.iloc[0]
+        st.markdown(f"""
+        <div style="background:#fff3e0; padding:15px; border-radius:10px; margin-top:20px;">
+            <h4>🔍 Analisis:</h4>
+            <p><b>{top_country['Negara']}</b> adalah negara dengan beasiswa terbanyak 
+            ({top_country['Jumlah Beasiswa']} beasiswa). Negara ini menjadi pusat utama 
+            pendidikan internasional dengan berbagai program beasiswa.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Filter Data
 # -------------------------
 elif menu == "🔎 Filter Data":
-    st.title("🔎 Filter Data Beasiswa")
+    st.title("🔎 Filter & Pencarian Data Beasiswa")
     df_db = fetch_data()
-
-    col1, col2 = st.columns(2)
-    benua_filter = col1.selectbox("Pilih Benua", df_db['benua'].unique())
-    program_filter = col2.selectbox("Pilih Program Beasiswa", df_db['program_beasiswa'].unique())
-
-    filtered_df = df_db[(df_db['benua'] == benua_filter) & (df_db['program_beasiswa'] == program_filter)]
-    st.dataframe(filtered_df, use_container_width=True)
+    
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    
+    # Pencarian dengan fuzzy matching
+    st.subheader("🔍 Pencarian Cerdas")
+    keyword = st.text_input("Masukkan kata kunci pencarian", placeholder="Cari berdasarkan nama lembaga, universitas, atau program")
+    
+    if keyword:
+        # Mencocokkan dengan fuzzy matching
+        df_db['match_score'] = df_db['nama_lembaga'].apply(lambda x: process.extractOne(keyword, [x])[1])
+        df_db = df_db[df_db['match_score'] > 70].drop(columns='match_score')
+        st.info(f"Ditemukan {len(df_db)} beasiswa yang cocok dengan kata kunci '{keyword}'")
+    
+    st.markdown("---")
+    
+    # Filter multi-kriteria
+    st.subheader("🎯 Filter Berdasarkan Kriteria")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        benua_filter = st.multiselect("Benua", df_db['benua'].unique())
+    with col2:
+        negara_filter = st.multiselect("Negara", df_db['asal_beasiswa'].unique())
+    with col3:
+        program_filter = st.multiselect("Program", df_db['program_beasiswa'].unique())
+    with col4:
+        jenis_filter = st.multiselect("Jenis Beasiswa", df_db['jenis_beasiswa'].unique())
+    
+    # Terapkan filter
+    if benua_filter:
+        df_db = df_db[df_db['benua'].isin(benua_filter)]
+    if negara_filter:
+        df_db = df_db[df_db['asal_beasiswa'].isin(negara_filter)]
+    if program_filter:
+        df_db = df_db[df_db['program_beasiswa'].isin(program_filter)]
+    if jenis_filter:
+        df_db = df_db[df_db['jenis_beasiswa'].isin(jenis_filter)]
+    
+    # Tampilkan hasil
+    st.subheader(f"📋 Hasil Pencarian ({len(df_db)} beasiswa ditemukan)")
+    st.dataframe(df_db, use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
-# Download Data
+# Download Data dengan Format Lebih Lengkap
 # -------------------------
 elif menu == "📥 Download Data":
     st.title("📥 Download Database")
     df_db = fetch_data()
-    file_format = st.selectbox("Pilih format file", ["CSV", "Excel"])
-
+    
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    
+    # Pilih kolom untuk di-download
+    st.subheader("Pilih Kolom yang Akan Diunduh")
+    selected_columns = st.multiselect(
+        "Pilih kolom:", 
+        df_db.columns.tolist(),
+        default=df_db.columns.tolist()
+    )
+    
+    if not selected_columns:
+        st.error("Harap pilih minimal satu kolom")
+        st.stop()
+    
+    df_selected = df_db[selected_columns]
+    
+    # Pilih format file
+    file_format = st.selectbox("Pilih format file", ["CSV", "Excel", "PDF"])
+    
     if file_format == "CSV":
-        st.download_button("Download CSV", df_db.to_csv(index=False).encode('utf-8'), "data_beasiswa.csv")
-    else:
+        csv = df_selected.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name='data_beasiswa.csv',
+            mime='text/csv'
+        )
+    elif file_format == "Excel":
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_db.to_excel(writer, index=False, sheet_name='Beasiswa')
-        st.download_button("Download Excel", output.getvalue(), "data_beasiswa.xlsx")
+            df_selected.to_excel(writer, index=False, sheet_name='Beasiswa')
+        st.download_button(
+            label="Download Excel",
+            data=output.getvalue(),
+            file_name='data_beasiswa.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    elif file_format == "PDF":
+        pdf_data = create_pdf(df_selected)
+        st.download_button(
+            label="Download PDF",
+            data=pdf_data,
+            file_name='data_beasiswa.pdf',
+            mime='application/pdf'
+        )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Reset Database
@@ -424,7 +762,7 @@ elif menu == "⚠️ Reset Database":
 
     st.warning("PERINGATAN: Tindakan ini akan menghapus **SELURUH data beasiswa** secara permanen. Harap berhati-hati!")
 
-    kode_verifikasi = st.text_input("Masukkan kode verifikasi admin untuk melanjutkan (ketik: xxx4):", type="password")
+    kode_verifikasi = st.text_input("Masukkan kode verifikasi admin untuk melanjutkan (ketik: 6464):", type="password")
 
     if kode_verifikasi == "6464":
         if st.button("🚨 Hapus Semua Data"):
@@ -434,5 +772,55 @@ elif menu == "⚠️ Reset Database":
             conn.commit()
             conn.close()
             st.success("✅ Semua data telah berhasil dihapus!")
+            st.balloons()
     elif kode_verifikasi != "":
         st.error("❌ Kode verifikasi salah. Silakan coba lagi.")
+
+# -------------------------
+# Integrasi API
+# -------------------------
+elif menu == "🔗 Integrasi API":
+    st.title("🔗 Integrasi API Beasiswa Eksternal")
+    
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    
+    st.subheader("Ambil Data dari Sumber Eksternal")
+    
+    if st.button("🔄 Ambil Data dari API"):
+        with st.spinner("Mengambil data dari API..."):
+            external_data = fetch_external_scholarships()
+            
+            if not external_data.empty:
+                st.success(f"Berhasil mengambil {len(external_data)} beasiswa dari API!")
+                
+                # Tampilkan preview data
+                st.subheader("Preview Data dari API")
+                st.dataframe(external_data.head())
+                
+                # Konfirmasi import
+                if st.button("✅ Import ke Database"):
+                    # Tambahkan ID unik dan timestamp
+                    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    external_data['id'] = ['API' + str(i) for i in range(len(external_data))]
+                    external_data['created_at'] = current_time
+                    
+                    # Sesuaikan kolom dengan database
+                    required_columns = ['id', 'benua', 'asal_beasiswa', 'nama_lembaga', 'top_univ', 
+                                      'program_beasiswa', 'jenis_beasiswa', 'persyaratan', 
+                                      'benefit', 'waktu_pendaftaran', 'link', 'created_at']
+                    
+                    # Isi kolom yang kosong dengan nilai default
+                    for col in required_columns:
+                        if col not in external_data.columns:
+                            external_data[col] = '-'
+                    
+                    # Insert ke database
+                    data_to_insert = external_data[required_columns].values.tolist()
+                    insert_data(data_to_insert)
+                    
+                    st.success("Data berhasil diimpor ke database!")
+                    st.balloons()
+            else:
+                st.error("Gagal mengambil data dari API. Silakan coba lagi nanti.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
