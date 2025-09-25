@@ -1,6 +1,7 @@
-Streamlit
-Pandas
-Plotly
-XlsxWriter
-openpyxl
+streamlit
+pandas
+plotly
 fuzzywuzzy
+python-Levenshtein
+requests
+fpdf2
