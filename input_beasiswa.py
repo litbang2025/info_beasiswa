@@ -10,7 +10,7 @@ import base64
 from fpdf import FPDF
 import warnings
 warnings.filterwarnings('ignore')
-
+import openpyxl
 # -------------------------
 # Fungsi koneksi database
 # -------------------------
@@ -824,3 +824,4 @@ elif menu == "🔗 Integrasi API":
                 st.error("Gagal mengambil data dari API. Silakan coba lagi nanti.")
     
     st.markdown('</div>', unsafe_allow_html=True)
+
